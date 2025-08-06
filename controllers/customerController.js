@@ -1,30 +1,30 @@
 const supabase = require('../config/supabaseClient');
 
 const getCustomers = async (req, res) => {
-    const { page = 1, limit = 10, search } = req.query;
-    const offset = (page - 1) * limit;
-
     try {
-        let query = supabase
-            .from('customers')
-            .select('*', { count: 'exact' });
+        const { page = 1, limit = 10, search = '', routeId = null } = req.query;
 
-        if (search) {
-            query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
-        }
+        const { data, error } = await supabase.rpc('search_customers_paginated', {
+            p_search_term: search,
+            p_route_id: routeId,
+            p_page_num: parseInt(page),
+            p_page_size: parseInt(limit)
+        });
 
-        query = query.range(offset, offset + limit - 1);
-
-        const { data, error, count } = await query;
         if (error) throw error;
 
+        const total_count = data.length > 0 ? data[0].total_count : 0;
+
+        // Quitamos la columna 'total_count' de cada objeto antes de enviarla
+        const items = data.map(({ total_count, ...rest }) => rest);
+
         res.json({
-            items: data,
+            items,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
-                total: count,
-                pages: Math.ceil(count / limit)
+                total: total_count,
+                pages: Math.ceil(total_count / limit)
             }
         });
     } catch (error) {
@@ -46,8 +46,21 @@ const getCustomerById = async (req, res) => {
 
 const createCustomer = async (req, res) => {
     try {
-        const customerData = req.body;
-        customerData.tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // Sacar del middleware de auth
+        const { firstName, lastName, email, phone, address, city, state, zipCode, routeId } = req.body;
+        
+        const customerData = {
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            phone,
+            address,
+            city,
+            state,
+            zip_code: zipCode,
+            route_id: routeId,
+            tenant_id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef' // Sacar del middleware de auth
+        };
+
         const { data, error } = await supabase.from('customers').insert(customerData).select().single();
         if (error) throw error;
         res.status(201).json(data);
@@ -59,7 +72,23 @@ const createCustomer = async (req, res) => {
 const updateCustomer = async (req, res) => {
     try {
         const { id } = req.params;
-        const customerData = req.body;
+        const { firstName, lastName, email, phone, address, city, state, zipCode, routeId } = req.body;
+
+        const customerData = {
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            phone,
+            address,
+            city,
+            state,
+            zip_code: zipCode,
+            route_id: routeId,
+        };
+
+        // Eliminar campos undefined para no sobreescribir con null
+        Object.keys(customerData).forEach(key => customerData[key] === undefined && delete customerData[key]);
+
         const { data, error } = await supabase.from('customers').update(customerData).eq('id', id).select().single();
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Cliente no encontrado' });

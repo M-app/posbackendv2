@@ -3,8 +3,7 @@ const supabase = require('../config/supabaseClient');
 const getRoutes = async (req, res) => {
     try {
         const { page = 1, limit = 15, sortBy = 'name', descending = 'false', search } = req.query;
-        const offset = (page - 1) * limit;
-
+        
         let query = supabase.from('routes').select('*', { count: 'exact' });
 
         if (search) {
@@ -12,7 +11,13 @@ const getRoutes = async (req, res) => {
         }
 
         query = query.order(sortBy, { ascending: descending === 'false' });
-        query = query.range(offset, offset + limit - 1);
+
+        // Solo aplicar paginación si limit no es 0
+        const parsedLimit = parseInt(limit);
+        if (parsedLimit !== 0) {
+            const offset = (page - 1) * parsedLimit;
+            query = query.range(offset, offset + parsedLimit - 1);
+        }
 
         const { data, error, count } = await query;
         if (error) throw error;
@@ -21,9 +26,9 @@ const getRoutes = async (req, res) => {
             items: data,
             pagination: {
                 page: parseInt(page),
-                limit: parseInt(limit),
+                limit: parsedLimit,
                 total: count,
-                pages: Math.ceil(count / limit)
+                pages: parsedLimit !== 0 ? Math.ceil(count / parsedLimit) : 1
             }
         });
     } catch (error) {
@@ -49,8 +54,12 @@ const getRouteById = async (req, res) => {
 
 const createRoute = async (req, res) => {
     try {
-        const routeData = req.body;
-        routeData.tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // Sacar del middleware de auth
+        const { name, description } = req.body;
+        const routeData = {
+            name,
+            description,
+            tenant_id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef' // Sacar del middleware de auth
+        };
         const { data, error } = await supabase.from('routes').insert(routeData).select().single();
         if (error) throw error;
         res.status(201).json(data);
@@ -62,7 +71,11 @@ const createRoute = async (req, res) => {
 const updateRoute = async (req, res) => {
     try {
         const { id } = req.params;
-        const routeData = req.body;
+        const { name, description } = req.body;
+        const routeData = { name, description };
+
+        Object.keys(routeData).forEach(key => routeData[key] === undefined && delete routeData[key]);
+
         const { data, error } = await supabase.from('routes').update(routeData).eq('id', id).select().single();
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Ruta no encontrada' });
