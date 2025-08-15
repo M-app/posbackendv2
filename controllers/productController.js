@@ -72,10 +72,30 @@ const getProductById = async (req, res) => {
 
 const createProduct = async (req, res) => {
     try {
-        const { variants, ...productData } = req.body;
-        // Asumimos tenant_id viene del middleware de autenticación
-        productData.tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+        const { variants, category, inventory, tenantId, ...productDetails } = req.body;
+        
+        // 1. Buscar el ID de la categoría
+        let categoryId = null;
+        if (category) {
+            const { data: categoryData, error: categoryError } = await supabase
+                .from('categories')
+                .select('id')
+                .eq('name', category)
+                .single();
+            
+            if (categoryError || !categoryData) {
+                return res.status(400).json({ error: `La categoría '${category}' no fue encontrada.` });
+            }
+            categoryId = categoryData.id;
+        }
 
+        const productData = {
+            ...productDetails,
+            category_id: categoryId,
+            tenant_id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef' // TODO: Sacar de auth
+        };
+
+        // 2. Insertar el producto principal
         const { data: newProduct, error: productError } = await supabase
             .from('products')
             .insert(productData)
@@ -84,29 +104,36 @@ const createProduct = async (req, res) => {
 
         if (productError) throw productError;
 
+        // 3. Procesar variantes y sus precios
         if (variants && variants.length > 0) {
             for (const variant of variants) {
-                const { prices, ...variantData } = variant;
-                variantData.product_id = newProduct.id;
-                variantData.tenant_id = newProduct.tenant_id;
+                // a. Preparar datos para product_variants
+                const { detalle, semi, mayoreo, ...variantDetails } = variant;
+                const variantData = {
+                    ...variantDetails,
+                    product_id: newProduct.id,
+                    tenant_id: newProduct.tenant_id,
+                };
 
+                // b. Insertar la variante y obtener su ID
                 const { data: newVariant, error: variantError } = await supabase
                     .from('product_variants')
                     .insert(variantData)
-                    .select()
+                    .select('id')
                     .single();
 
                 if (variantError) throw variantError;
 
-                if (prices && prices.length > 0) {
-                    const priceData = prices.map(p => ({
-                        ...p,
-                        variant_id: newVariant.id,
-                        tenant_id: newProduct.tenant_id
-                    }));
-                    const { error: priceError } = await supabase.from('variant_prices').insert(priceData);
-                    if (priceError) throw priceError;
-                }
+                // c. Preparar los datos de precios para variant_prices
+                const pricesData = [
+                    { name: 'detalle', value: detalle, min_quantity: 1, variant_id: newVariant.id, tenant_id: newProduct.tenant_id },
+                    { name: 'semi', value: semi, min_quantity: 10, variant_id: newVariant.id, tenant_id: newProduct.tenant_id },
+                    { name: 'mayoreo', value: mayoreo, min_quantity: 20, variant_id: newVariant.id, tenant_id: newProduct.tenant_id }
+                ];
+
+                // d. Insertar los precios
+                const { error: priceError } = await supabase.from('variant_prices').insert(pricesData);
+                if (priceError) throw priceError;
             }
         }
         
@@ -118,26 +145,67 @@ const createProduct = async (req, res) => {
 
 const updateProduct = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { variants, ...productData } = req.body;
+        const { id: productId } = req.params;
+        const { variants, category, ...productDetails } = req.body;
+        const tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // TODO: Sacar de auth
 
+        // 1. Buscar el ID de la categoría si se proporcionó
+        let categoryId = productDetails.category_id;
+        if (category && typeof category === 'string') {
+            const { data: categoryData, error: categoryError } = await supabase
+                .from('categories').select('id').eq('name', category).single();
+            if (categoryError || !categoryData) return res.status(400).json({ error: `La categoría '${category}' no fue encontrada.` });
+            categoryId = categoryData.id;
+        }
+
+        // 2. Actualizar los datos del producto principal
         const { data: updatedProduct, error: productError } = await supabase
             .from('products')
-            .update(productData)
-            .eq('id', id)
+            .update({ name: productDetails.name, description: productDetails.description, category_id: categoryId })
+            .eq('id', productId)
             .select()
             .single();
-        
+
         if (productError) throw productError;
         if (!updatedProduct) return res.status(404).json({ error: 'Producto no encontrado' });
 
-        // Aquí la lógica para actualizar/crear/eliminar variantes y precios sería más compleja.
-        // Por simplicidad, esta implementación básica no maneja la actualización anidada profunda.
-        // Se requeriría una función RPC o una lógica más detallada aquí.
+        // 3. Sincronizar variantes y precios
+        if (variants && variants.length > 0) {
+            for (const variant of variants) {
+                const { id: variantId, detalle, semi, mayoreo, ...variantData } = variant;
+
+                // a. Preparar datos para la tabla 'product_variants'
+                const variantToUpsert = {
+                    ...variantData,
+                    id: variantId, // Importante para el upsert
+                    product_id: productId,
+                    tenant_id: tenantId,
+                };
+                
+                // b. Hacer Upsert en 'product_variants'
+                const { error: variantError } = await supabase.from('product_variants').upsert(variantToUpsert);
+                if (variantError) throw variantError;
+
+                // c. Preparar datos de precios
+                const pricesToUpsert = [
+                    { name: 'detalle', value: detalle, min_quantity: 1, variant_id: variantId, tenant_id: tenantId },
+                    { name: 'semi', value: semi, min_quantity: 10, variant_id: variantId, tenant_id: tenantId },
+                    { name: 'mayoreo', value: mayoreo, min_quantity: 20, variant_id: variantId, tenant_id: tenantId }
+                ];
+
+                // d. Hacer Upsert en 'variant_prices'
+                const { error: priceError } = await supabase.from('variant_prices').upsert(pricesToUpsert, { onConflict: 'variant_id,name' });
+                if (priceError) throw priceError;
+            }
+        }
+        
+        // Opcional: Manejar eliminación de variantes que ya no vienen del frontend
+        // ... (lógica más compleja, omitida por ahora)
 
         res.json(updatedProduct);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error al actualizar el producto:', error);
+        res.status(500).json({ error: 'Error interno del servidor al actualizar el producto.', details: error.message });
     }
 };
 

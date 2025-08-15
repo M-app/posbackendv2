@@ -2,7 +2,16 @@ const supabase = require('../config/supabaseClient');
 
 const getCategories = async (req, res) => {
     try {
-        const { data, error } = await supabase.from('categories').select('*');
+        const { search } = req.query;
+        let query = supabase.from('categories').select('*');
+
+        // Aplicar el filtro solo si el término de búsqueda no está vacío
+        if (search && search.trim() !== '') {
+            // Usar una sintaxis de filtro alternativa para mayor robustez
+            query = query.filter('name', 'ilike', `%${search.trim()}%`);
+        }
+
+        const { data, error } = await query;
         if (error) throw error;
         res.json(data);
     } catch (error) {

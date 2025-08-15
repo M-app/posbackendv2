@@ -63,7 +63,11 @@ const getInventoryRecords = async (req, res) => {
                 *,
                 items:inventory_record_items(
                     *,
-                    variant:product_variants(code, title)
+                    variant:product_variants(
+                        code, 
+                        title,
+                        product:products(name)
+                    )
                 )
             `, { count: 'exact' });
         
