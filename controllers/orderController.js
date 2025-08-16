@@ -70,7 +70,9 @@ const deleteOrder = async (req, res) => {
 
 const getOrders = async (req, res) => {
     const { page = 1, limit = 10, status, startDate, endDate } = req.query;
-    const offset = (page - 1) * limit;
+    const pageNum = parseInt(page, 10) || 1;
+    const lim = parseInt(limit, 10) || 10;
+    const offset = (pageNum - 1) * lim;
 
     try {
         let query = supabase
@@ -85,7 +87,7 @@ const getOrders = async (req, res) => {
         if (startDate) query = query.gte('date', startDate);
         if (endDate) query = query.lte('date', endDate);
 
-        query = query.order('date', { ascending: false }).range(offset, offset + limit - 1);
+        query = query.order('date', { ascending: false }).range(offset, offset + lim - 1);
 
         const { data, error, count } = await query;
         if (error) throw error;
@@ -93,10 +95,10 @@ const getOrders = async (req, res) => {
         res.json({
             items: data,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: pageNum,
+                limit: lim,
                 total: count,
-                pages: Math.ceil(count / limit)
+                pages: Math.ceil(count / lim)
             }
         });
     } catch (error) {

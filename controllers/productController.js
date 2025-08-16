@@ -2,9 +2,10 @@ const supabase = require('../config/supabaseClient');
 
 const getProducts = async (req, res) => {
   // Lógica de paginación y filtros similar al mock
-  const { page = 1, rowsPerPage = 10, search, category } = req.query;
-  const limit = rowsPerPage;
-  const offset = (page - 1) * limit;
+  const { page = 1, rowsPerPage = 10, search, category, sortBy, descending } = req.query;
+  const pageNum = parseInt(page, 10) || 1;
+  const limit = parseInt(rowsPerPage, 10) || 10;
+  const offset = (pageNum - 1) * limit;
 
   try {
     let query = supabase
@@ -25,6 +26,12 @@ const getProducts = async (req, res) => {
       query = query.eq('category_id', category);
     }
 
+    // Ordenamiento opcional
+    const validSorts = new Set(['name', 'description', 'created_at']);
+    const sortKey = validSorts.has(sortBy) ? sortBy : 'name';
+    const isDescending = String(descending).toLowerCase() === 'true';
+    query = query.order(sortKey, { ascending: !isDescending });
+
     query = query.range(offset, offset + limit - 1);
 
     const { data, error, count } = await query;
@@ -34,8 +41,8 @@ const getProducts = async (req, res) => {
     res.json({
       items: data,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limit,
         total: count,
         pages: Math.ceil(count / limit)
       }
