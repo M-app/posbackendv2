@@ -4,8 +4,10 @@ const getProducts = async (req, res) => {
   // Lógica de paginación y filtros similar al mock
   const { page = 1, rowsPerPage = 10, search, category, sortBy, descending } = req.query;
   const pageNum = parseInt(page, 10) || 1;
-  const limit = parseInt(rowsPerPage, 10) || 10;
-  const offset = (pageNum - 1) * limit;
+  const requestedLimit = parseInt(rowsPerPage, 10);
+  const fetchAll = requestedLimit === 0; // rowsPerPage=0 => traer todo
+  const limit = fetchAll ? null : (Number.isFinite(requestedLimit) && requestedLimit > 0 ? requestedLimit : 10);
+  const offset = fetchAll ? 0 : (pageNum - 1) * limit;
 
   try {
     let query = supabase
@@ -32,21 +34,61 @@ const getProducts = async (req, res) => {
     const isDescending = String(descending).toLowerCase() === 'true';
     query = query.order(sortKey, { ascending: !isDescending });
 
-    query = query.range(offset, offset + limit - 1);
+    if (!fetchAll) {
+      query = query.range(offset, offset + limit - 1);
+    }
 
     const { data, error, count } = await query;
 
     if (error) throw error;
 
+    const effectiveLimit = fetchAll ? (data?.length || 0) : limit;
     res.json({
       items: data,
       pagination: {
-        page: pageNum,
-        limit: limit,
+        page: fetchAll ? 1 : pageNum,
+        limit: effectiveLimit,
         total: count,
-        pages: Math.ceil(count / limit)
+        pages: fetchAll ? 1 : Math.ceil(count / limit)
       }
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Endpoint liviano optimizado para página de órdenes (solo lo necesario)
+const getOrderProducts = async (req, res) => {
+  try {
+    const { search } = req.query;
+    let query = supabase
+      .from('products')
+      .select(`
+        id,
+        name,
+        category:categories(name),
+        variants:product_variants(
+          id,
+          code,
+          title,
+          enabled,
+          stock,
+          prices:variant_prices(name, value, min_quantity)
+        )
+      `);
+
+    if (search) {
+      query = query.ilike('name', `%${search}%`);
+    }
+
+    // Orden básico por nombre
+    query = query.order('name', { ascending: true });
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    // Sin paginación; respuesta directa optimizada
+    res.json({ items: data });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -230,6 +272,7 @@ const deleteProduct = async (req, res) => {
 
 module.exports = {
   getProducts,
+  getOrderProducts,
   getProductById,
   createProduct,
   updateProduct,

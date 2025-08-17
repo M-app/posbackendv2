@@ -1,11 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const supabase = require('./config/supabaseClient');
 
 const app = express();
 
 app.use(cors());
+// Habilitar compresión para respuestas JSON/HTML/CSS/JS (umbral 1KB)
+app.use(compression({ threshold: 1024 }));
 app.use(express.json());
 
 // Prueba de conexión a Supabase

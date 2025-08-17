@@ -4,8 +4,24 @@ const supabase = require('../config/supabaseClient');
 const createOrderTransactional = async (req, res) => {
   const orderPayload = req.body;
   // Asumimos que estos datos vienen del middleware de autenticación
-  orderPayload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; 
-  orderPayload.createdBy = req.user?.id || null; 
+  orderPayload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+  orderPayload.tenant_id = orderPayload.tenantId; // compat camel/snake
+  orderPayload.createdBy = req.user?.id || null;
+  orderPayload.created_by = orderPayload.createdBy; // compat camel/snake
+  // Normalizar customer
+  if (orderPayload.customer || orderPayload.customerId || orderPayload.customer_id) {
+    orderPayload.customer_id = orderPayload.customer_id || orderPayload.customerId || orderPayload.customer?.id || null;
+  }
+  // Normalizar items a snake_case para RPC
+  if (Array.isArray(orderPayload.items)) {
+    orderPayload.items = orderPayload.items.map((it) => ({
+      variant_id: it.variant_id ?? it.variantId ?? null,
+      quantity: it.quantity,
+      price: it.price,
+      name: it.name,
+      variant_title: it.variantTitle ?? it.variant_title ?? null
+    }));
+  }
   
   const { data, error } = await supabase.rpc('process_order', {
     order_payload: orderPayload
@@ -28,6 +44,21 @@ const updateOrder = async (req, res) => {
     const { id } = req.params;
     const orderPayload = req.body;
     orderPayload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+    orderPayload.tenant_id = orderPayload.tenantId;
+    orderPayload.createdBy = req.user?.id || null;
+    orderPayload.created_by = orderPayload.createdBy;
+    if (orderPayload.customer || orderPayload.customerId || orderPayload.customer_id) {
+      orderPayload.customer_id = orderPayload.customer_id || orderPayload.customerId || orderPayload.customer?.id || null;
+    }
+    if (Array.isArray(orderPayload.items)) {
+        orderPayload.items = orderPayload.items.map((it) => ({
+          variant_id: it.variant_id ?? it.variantId ?? null,
+          quantity: it.quantity,
+          price: it.price,
+          name: it.name,
+          variant_title: it.variantTitle ?? it.variant_title ?? null
+        }));
+    }
 
     const { data, error } = await supabase.rpc('update_order_transactional', {
         p_order_id: id,
@@ -80,7 +111,7 @@ const getOrders = async (req, res) => {
             .select(`
                 *,
                 customer:customers(first_name, last_name),
-                seller:profiles(first_name, last_name)
+                items:order_items(quantity)
             `, { count: 'exact' });
         
         if (status) query = query.eq('status', status);
@@ -114,8 +145,7 @@ const getOrderById = async (req, res) => {
             .select(`
                 *,
                 customer:customers(*),
-                seller:profiles(first_name, last_name),
-                items:order_items(*)
+                items:order_items(*, variant:product_variants(id, code, title, stock, product:products(name)))
             `)
             .eq('id', id)
             .single();
