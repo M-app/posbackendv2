@@ -6,7 +6,7 @@ const createOrderTransactional = async (req, res) => {
   // Asumimos que estos datos vienen del middleware de autenticación
   orderPayload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
   orderPayload.tenant_id = orderPayload.tenantId; // compat camel/snake
-  orderPayload.createdBy = req.user?.id || null;
+  orderPayload.createdBy = req.user?.id || orderPayload.createdBy || null;
   orderPayload.created_by = orderPayload.createdBy; // compat camel/snake
   // Normalizar customer
   if (orderPayload.customer || orderPayload.customerId || orderPayload.customer_id) {
@@ -37,6 +37,19 @@ const createOrderTransactional = async (req, res) => {
     return res.status(400).json(data);
   }
 
+  // Asegurar vendedor (created_by) si la RPC no lo asignó
+  try {
+    const createdOrderId = data?.order_id || data?.orderId || data?.id;
+    if (createdOrderId && orderPayload.created_by) {
+      await supabase
+        .from('orders')
+        .update({ created_by: orderPayload.created_by })
+        .eq('id', createdOrderId);
+    }
+  } catch (e) {
+    console.warn('No se pudo asegurar created_by en orders:', e?.message);
+  }
+
   res.status(201).json(data);
 };
 
@@ -45,7 +58,7 @@ const updateOrder = async (req, res) => {
     const orderPayload = req.body;
     orderPayload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
     orderPayload.tenant_id = orderPayload.tenantId;
-    orderPayload.createdBy = req.user?.id || null;
+    orderPayload.createdBy = req.user?.id || orderPayload.createdBy || null;
     orderPayload.created_by = orderPayload.createdBy;
     if (orderPayload.customer || orderPayload.customerId || orderPayload.customer_id) {
       orderPayload.customer_id = orderPayload.customer_id || orderPayload.customerId || orderPayload.customer?.id || null;
@@ -123,8 +136,30 @@ const getOrders = async (req, res) => {
         const { data, error, count } = await query;
         if (error) throw error;
         
+        // Enriquecer con información del vendedor (created_by)
+        const sellerIds = Array.from(new Set((data || [])
+          .map(o => o.created_by)
+          .filter(Boolean)));
+        let sellersMap = new Map();
+        if (sellerIds.length > 0) {
+            const { data: sellers, error: sellersError } = await supabase
+                .from('profiles_with_auth')
+                .select('id, first_name, last_name, username, email')
+                .in('id', sellerIds);
+            if (!sellersError && Array.isArray(sellers)) {
+                sellersMap = new Map(sellers.map(s => [s.id, s]));
+            }
+        }
+
+        const enriched = (data || []).map(o => {
+            const s = sellersMap.get(o.created_by);
+            const fullName = s ? `${s.first_name || ''} ${s.last_name || ''}`.trim() : '';
+            const sellerName = fullName || s?.username || s?.email || '—';
+            return { ...o, sellerName };
+        });
+
         res.json({
-            items: data,
+            items: enriched,
             pagination: {
                 page: pageNum,
                 limit: lim,
