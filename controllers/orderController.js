@@ -113,7 +113,7 @@ const deleteOrder = async (req, res) => {
 
 
 const getOrders = async (req, res) => {
-    const { page = 1, limit = 10, status, startDate, endDate } = req.query;
+    const { page = 1, limit = 10, status, startDate, endDate, sellerId } = req.query;
     const pageNum = parseInt(page, 10) || 1;
     const lim = parseInt(limit, 10) || 10;
     const offset = (pageNum - 1) * lim;
@@ -130,6 +130,7 @@ const getOrders = async (req, res) => {
         if (status) query = query.eq('status', status);
         if (startDate) query = query.gte('date', startDate);
         if (endDate) query = query.lte('date', endDate);
+        if (sellerId) query = query.eq('created_by', sellerId);
 
         query = query.order('date', { ascending: false }).range(offset, offset + lim - 1);
 
@@ -172,6 +173,27 @@ const getOrders = async (req, res) => {
     }
 };
 
+// Estadísticas de órdenes por rango (total órdenes, items, total ventas) y por vendedor
+const getOrdersStats = async (req, res) => {
+    try {
+        const { startDate, endDate, sellerId } = req.query;
+        let query = supabase
+            .from('orders')
+            .select('id, total, created_by, items:order_items(quantity)', { count: 'exact' });
+        if (startDate) query = query.gte('date', startDate);
+        if (endDate) query = query.lte('date', endDate);
+        if (sellerId) query = query.eq('created_by', sellerId);
+        const { data, error, count } = await query;
+        if (error) throw error;
+        const orders = count || (data ? data.length : 0);
+        const items = (data || []).reduce((sum, o) => sum + (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (it.quantity || 0), 0) : 0), 0);
+        const total = (data || []).reduce((sum, o) => sum + Number(o.total || 0), 0);
+        res.json({ orders, items, total, avg: orders > 0 ? total / orders : 0 });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 const getOrderById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -200,5 +222,6 @@ module.exports = {
   deleteOrder,
   getOrders,
   getOrderById,
+  getOrdersStats,
   createOrder: (req, res) => res.status(501).json({ message: 'Use /checkout para crear una orden procesada.' }) // Placeholder
 };
