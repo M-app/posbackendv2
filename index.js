@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const supabase = require('./config/supabaseClient');
+const { authMiddleware, requireRole } = require('./middleware/auth');
 
 const app = express();
 
@@ -20,6 +21,8 @@ app.get('/', (req, res) => {
 // app.use('/api/auth', require('./routes/authRoutes'));
 // app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
+// Protegemos todo lo demás
+app.use('/api', authMiddleware);
 app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
