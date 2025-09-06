@@ -2,7 +2,7 @@ const supabase = require('../config/supabaseClient');
 const VIRTUAL_EMAIL_DOMAIN = process.env.VIRTUAL_EMAIL_DOMAIN || 'user.local';
 
 const signUp = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, tenantId } = req.body;
 
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -11,6 +11,14 @@ const signUp = async (req, res) => {
 
   if (error) {
     return res.status(400).json({ error: error.message });
+  }
+
+  // Si se proporciona tenantId, asignar el usuario al tenant
+  if (data.user && tenantId) {
+    await supabase
+      .from('profiles')
+      .update({ tenant_id: tenantId })
+      .eq('id', data.user.id);
   }
 
   res.status(201).json({ user: data.user });
@@ -42,7 +50,7 @@ const signIn = async (req, res) => {
     if (userId) {
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, role, username')
+        .select('id, first_name, last_name, role, username, tenant_id')
         .eq('id', userId)
         .maybeSingle();
       profile = profileData || null;
@@ -76,7 +84,7 @@ module.exports = {
       if (userId) {
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name, role, username')
+          .select('id, first_name, last_name, role, username, tenant_id')
           .eq('id', userId)
           .maybeSingle();
         profile = profileData || null;

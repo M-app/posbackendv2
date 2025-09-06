@@ -4,7 +4,7 @@ const supabase = require('../config/supabaseClient');
 const createOrderTransactional = async (req, res) => {
   const orderPayload = req.body;
   // Asumimos que estos datos vienen del middleware de autenticación
-  orderPayload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+  orderPayload.tenantId = req.user.tenant_id;
   orderPayload.tenant_id = orderPayload.tenantId; // compat camel/snake
   orderPayload.createdBy = req.user?.id || orderPayload.createdBy || null;
   orderPayload.created_by = orderPayload.createdBy; // compat camel/snake
@@ -56,7 +56,7 @@ const createOrderTransactional = async (req, res) => {
 const updateOrder = async (req, res) => {
     const { id } = req.params;
     const orderPayload = req.body;
-    orderPayload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+    orderPayload.tenantId = req.user.tenant_id;
     orderPayload.tenant_id = orderPayload.tenantId;
     orderPayload.createdBy = req.user?.id || orderPayload.createdBy || null;
     orderPayload.created_by = orderPayload.createdBy;

@@ -21,6 +21,8 @@ app.get('/', (req, res) => {
 // app.use('/api/auth', require('./routes/authRoutes'));
 // app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
+// Rutas de tenants (con middleware especial)
+app.use('/api/tenants', require('./routes/tenantRoutes'));
 // Protegemos todo lo demás
 app.use('/api', authMiddleware);
 app.use('/api/orders', require('./routes/orderRoutes'));

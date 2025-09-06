@@ -4,14 +4,21 @@ const VIRTUAL_EMAIL_DOMAIN = process.env.VIRTUAL_EMAIL_DOMAIN || 'user.local';
 
 const getUsers = async (req, res) => {
     try {
-        // En un escenario real, filtraríamos por tenant_id
-        // const tenant_id = req.user.tenant_id;
+        const tenant_id = req.user.tenant_id;
 
-        // 1) Obtener perfiles + email desde la vista (evita usar admin.listUsers)
-        const { data: profiles, error: profilesError } = await supabase
-            .from('profiles_with_auth')
-            .select('id, first_name, last_name, username, role, email');
-            // .eq('tenant_id', tenant_id);
+        // 1) Obtener perfiles + email desde auth.users
+        const { data: profiles, error: profilesError } = await supabaseAdmin
+            .from('profiles')
+            .select(`
+                id, 
+                first_name, 
+                last_name, 
+                username, 
+                role, 
+                tenant_id,
+                auth_users!inner(email)
+            `)
+            .eq('tenant_id', tenant_id);
         if (profilesError) throw profilesError;
 
         // 2) Mapear datos
@@ -21,7 +28,7 @@ const getUsers = async (req, res) => {
             lastName: p.last_name,
             username: p.username || null,
             role: p.role === 'admin' ? 'administrador' : 'vendedor',
-            email: p.email || 'N/A',
+            email: p.auth_users?.email || 'N/A',
             status: 'Activo'
         }));
 
@@ -39,7 +46,12 @@ const createUser = async (req, res) => {
             return res.status(400).json({ error: 'La contraseña es requerida y debe tener al menos 6 caracteres' });
         }
 
-        const normalizedRole = (role || '').toLowerCase();
+        // Manejar role que puede venir como string o como objeto {label, value}
+        let roleValue = role;
+        if (typeof role === 'object' && role !== null) {
+            roleValue = role.value || role.label || '';
+        }
+        const normalizedRole = (roleValue || '').toString().toLowerCase();
         if (!['administrador', 'vendedor', 'admin', 'seller'].includes(normalizedRole)) {
             return res.status(400).json({ error: 'Rol inválido. Use "administrador" o "vendedor"' });
         }
@@ -79,7 +91,7 @@ const createUser = async (req, res) => {
         }
 
         // Crear usuario en Auth
-        const tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // TODO: obtener de middleware de auth
+        const tenant_id = req.user.tenant_id;
         const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
             email: finalEmail,
             password,
@@ -135,7 +147,7 @@ const createUser = async (req, res) => {
 const inviteUser = async (req, res) => {
     try {
         const { email, role } = req.body;
-        const tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // Sacar del middleware de auth
+        const tenant_id = req.user.tenant_id;
 
         // Usamos el cliente de admin para invitar a un nuevo usuario
         const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {

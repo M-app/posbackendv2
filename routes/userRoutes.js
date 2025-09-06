@@ -8,9 +8,9 @@ const {
 } = require('../controllers/userController');
 const { requireRole } = require('../middleware/auth')
 
-router.get('/', requireRole('admin'), getUsers);
-router.post('/', requireRole('admin'), createUser);
-router.post('/invite', requireRole('admin'), inviteUser);
-router.delete('/:id', requireRole('admin'), deleteUser);
+router.get('/', requireRole('admin', 'super_admin'), getUsers);
+router.post('/', requireRole('admin', 'super_admin'), createUser);
+router.post('/invite', requireRole('admin', 'super_admin'), inviteUser);
+router.delete('/:id', requireRole('admin', 'super_admin'), deleteUser);
 
 module.exports = router;

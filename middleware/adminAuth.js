@@ -1,12 +1,12 @@
-const supabase = require('../config/supabaseClient')
-const supabaseAdmin = require('../config/supabaseAdmin')
+const supabaseAdmin = require('../config/supabaseAdmin');
 
-async function authMiddleware(req, res, next) {
+async function adminAuthMiddleware(req, res, next) {
   try {
     const auth = req.headers.authorization || ''
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
     if (!token) return res.status(401).json({ error: 'No autorizado' })
 
+    // Usar el cliente admin para verificar el token
     const { data, error } = await supabaseAdmin.auth.getUser(token)
     if (error || !data?.user) return res.status(401).json({ error: 'Token inválido' })
 
@@ -21,6 +21,11 @@ async function authMiddleware(req, res, next) {
       return res.status(403).json({ error: 'Usuario sin tenant asignado' })
     }
 
+    // Verificar que sea super admin
+    if (profile.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Se requieren permisos de super administrador' })
+    }
+
     req.user = {
       id: userId,
       email: data.user.email,
@@ -28,38 +33,10 @@ async function authMiddleware(req, res, next) {
       tenant_id: profile.tenant_id,
       profile: profile || null
     }
-    
-    // Debug log
-    console.log('Auth middleware - User:', {
-      id: userId,
-      email: data.user.email,
-      role: profile?.role,
-      tenant_id: profile?.tenant_id
-    })
-    
     next()
   } catch (e) {
     res.status(401).json({ error: 'No autorizado' })
   }
 }
 
-function requireRole(...allowed) {
-  return (req, res, next) => {
-    const role = req.user?.role
-    if (!role) return res.status(403).json({ error: 'Permisos insuficientes' })
-    if (!allowed.includes(role)) return res.status(403).json({ error: 'Permisos insuficientes' })
-    next()
-  }
-}
-
-function requireSuperAdmin(req, res, next) {
-  const role = req.user?.role
-  if (role !== 'super_admin') {
-    return res.status(403).json({ error: 'Se requieren permisos de super administrador' })
-  }
-  next()
-}
-
-module.exports = { authMiddleware, requireRole, requireSuperAdmin }
-
-
+module.exports = { adminAuthMiddleware }

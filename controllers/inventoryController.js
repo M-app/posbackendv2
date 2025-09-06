@@ -2,7 +2,7 @@ const supabase = require('../config/supabaseClient');
 
 const createInventoryRecord = async (req, res) => {
     const payload = req.body;
-    payload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+    payload.tenantId = req.user.tenant_id;
 
     // Normalizar items camelCase -> snake_case para RPC
     if (Array.isArray(payload.items)) {
@@ -29,7 +29,7 @@ const createInventoryRecord = async (req, res) => {
 const updateInventoryRecord = async (req, res) => {
     const { id } = req.params;
     const payload = req.body;
-    payload.tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+    payload.tenantId = req.user.tenant_id;
 
     // Normalizar items camelCase -> snake_case para RPC
     if (Array.isArray(payload.items)) {
