@@ -1,4 +1,5 @@
 const supabase = require('../config/supabaseClient');
+const supabaseAdmin = require('../config/supabaseAdmin');
 
 const getProducts = async (req, res) => {
   // Lógica de paginación y filtros similar al mock
@@ -8,18 +9,21 @@ const getProducts = async (req, res) => {
   const fetchAll = requestedLimit === 0; // rowsPerPage=0 => traer todo
   const limit = fetchAll ? null : (Number.isFinite(requestedLimit) && requestedLimit > 0 ? requestedLimit : 10);
   const offset = fetchAll ? 0 : (pageNum - 1) * limit;
+  const tenant_id = req.user.tenant_id;
 
   try {
-    let query = supabase
+    let query = supabaseAdmin
       .from('products')
       .select(`
         *,
-        category:categories(name),
+        category:categories!inner(name),
         variants:product_variants (
           *,
           prices:variant_prices(*)
         )
-      `, { count: 'exact' });
+      `, { count: 'exact' })
+      .eq('tenant_id', tenant_id)
+      .eq('categories.tenant_id', tenant_id);
 
     if (search) {
       query = query.ilike('name', `%${search}%`);
@@ -61,12 +65,13 @@ const getProducts = async (req, res) => {
 const getOrderProducts = async (req, res) => {
   try {
     const { search } = req.query;
-    let query = supabase
+    const tenant_id = req.user.tenant_id;
+    let query = supabaseAdmin
       .from('products')
       .select(`
         id,
         name,
-        category:categories(name),
+        category:categories!inner(name),
         variants:product_variants(
           id,
           code,
@@ -75,7 +80,9 @@ const getOrderProducts = async (req, res) => {
           stock,
           prices:variant_prices(name, value, min_quantity)
         )
-      `);
+      `)
+      .eq('tenant_id', tenant_id)
+      .eq('categories.tenant_id', tenant_id);
 
     if (search) {
       query = query.ilike('name', `%${search}%`);
@@ -97,17 +104,20 @@ const getOrderProducts = async (req, res) => {
 const getProductById = async (req, res) => {
     try {
         const { id } = req.params;
-        const { data: product, error } = await supabase
+        const tenant_id = req.user.tenant_id;
+        const { data: product, error } = await supabaseAdmin
             .from('products')
             .select(`
                 *,
-                category:categories(name),
+                category:categories!inner(name),
                 variants:product_variants (
                     *,
                     prices:variant_prices(*)
                 )
             `)
             .eq('id', id)
+            .eq('tenant_id', tenant_id)
+            .eq('categories.tenant_id', tenant_id)
             .single();
 
         if (error) throw error;
@@ -122,14 +132,16 @@ const getProductById = async (req, res) => {
 const createProduct = async (req, res) => {
     try {
         const { variants, category, inventory, tenantId, ...productDetails } = req.body;
+        const tenant_id = req.user.tenant_id;
         
         // 1. Buscar el ID de la categoría
         let categoryId = null;
         if (category) {
-            const { data: categoryData, error: categoryError } = await supabase
+            const { data: categoryData, error: categoryError } = await supabaseAdmin
                 .from('categories')
                 .select('id')
                 .eq('name', category)
+                .eq('tenant_id', tenant_id)
                 .single();
             
             if (categoryError || !categoryData) {
@@ -141,11 +153,11 @@ const createProduct = async (req, res) => {
         const productData = {
             ...productDetails,
             category_id: categoryId,
-            tenant_id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef' // TODO: Sacar de auth
+            tenant_id
         };
 
         // 2. Insertar el producto principal
-        const { data: newProduct, error: productError } = await supabase
+        const { data: newProduct, error: productError } = await supabaseAdmin
             .from('products')
             .insert(productData)
             .select()
@@ -165,7 +177,7 @@ const createProduct = async (req, res) => {
                 };
 
                 // b. Insertar la variante y obtener su ID
-                const { data: newVariant, error: variantError } = await supabase
+                const { data: newVariant, error: variantError } = await supabaseAdmin
                     .from('product_variants')
                     .insert(variantData)
                     .select('id')
@@ -181,7 +193,7 @@ const createProduct = async (req, res) => {
                 ];
 
                 // d. Insertar los precios
-                const { error: priceError } = await supabase.from('variant_prices').insert(pricesData);
+                const { error: priceError } = await supabaseAdmin.from('variant_prices').insert(pricesData);
                 if (priceError) throw priceError;
             }
         }
@@ -196,22 +208,23 @@ const updateProduct = async (req, res) => {
     try {
         const { id: productId } = req.params;
         const { variants, category, ...productDetails } = req.body;
-        const tenantId = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // TODO: Sacar de auth
+        const tenant_id = req.user.tenant_id;
 
         // 1. Buscar el ID de la categoría si se proporcionó
         let categoryId = productDetails.category_id;
         if (category && typeof category === 'string') {
-            const { data: categoryData, error: categoryError } = await supabase
-                .from('categories').select('id').eq('name', category).single();
+            const { data: categoryData, error: categoryError } = await supabaseAdmin
+                .from('categories').select('id').eq('name', category).eq('tenant_id', tenant_id).single();
             if (categoryError || !categoryData) return res.status(400).json({ error: `La categoría '${category}' no fue encontrada.` });
             categoryId = categoryData.id;
         }
 
         // 2. Actualizar los datos del producto principal
-        const { data: updatedProduct, error: productError } = await supabase
+        const { data: updatedProduct, error: productError } = await supabaseAdmin
             .from('products')
             .update({ name: productDetails.name, description: productDetails.description, category_id: categoryId })
             .eq('id', productId)
+            .eq('tenant_id', tenant_id)
             .select()
             .single();
 
@@ -228,22 +241,22 @@ const updateProduct = async (req, res) => {
                     ...variantData,
                     id: variantId, // Importante para el upsert
                     product_id: productId,
-                    tenant_id: tenantId,
+                    tenant_id: tenant_id,
                 };
                 
                 // b. Hacer Upsert en 'product_variants'
-                const { error: variantError } = await supabase.from('product_variants').upsert(variantToUpsert);
+                const { error: variantError } = await supabaseAdmin.from('product_variants').upsert(variantToUpsert);
                 if (variantError) throw variantError;
 
                 // c. Preparar datos de precios
                 const pricesToUpsert = [
-                    { name: 'detalle', value: detalle, min_quantity: 1, variant_id: variantId, tenant_id: tenantId },
-                    { name: 'semi', value: semi, min_quantity: 10, variant_id: variantId, tenant_id: tenantId },
-                    { name: 'mayoreo', value: mayoreo, min_quantity: 20, variant_id: variantId, tenant_id: tenantId }
+                    { name: 'detalle', value: detalle, min_quantity: 1, variant_id: variantId, tenant_id: tenant_id },
+                    { name: 'semi', value: semi, min_quantity: 10, variant_id: variantId, tenant_id: tenant_id },
+                    { name: 'mayoreo', value: mayoreo, min_quantity: 20, variant_id: variantId, tenant_id: tenant_id }
                 ];
 
                 // d. Hacer Upsert en 'variant_prices'
-                const { error: priceError } = await supabase.from('variant_prices').upsert(pricesToUpsert, { onConflict: 'variant_id,name' });
+                const { error: priceError } = await supabaseAdmin.from('variant_prices').upsert(pricesToUpsert, { onConflict: 'variant_id,name' });
                 if (priceError) throw priceError;
             }
         }
@@ -261,7 +274,8 @@ const updateProduct = async (req, res) => {
 const deleteProduct = async (req, res) => {
     try {
         const { id } = req.params;
-        const { error } = await supabase.from('products').delete().eq('id', id);
+        const tenant_id = req.user.tenant_id;
+        const { error } = await supabaseAdmin.from('products').delete().eq('id', id).eq('tenant_id', tenant_id);
         if (error) throw error;
         res.status(204).send();
     } catch (error) {

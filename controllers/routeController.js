@@ -1,10 +1,12 @@
 const supabase = require('../config/supabaseClient');
+const supabaseAdmin = require('../config/supabaseAdmin');
 
 const getRoutes = async (req, res) => {
     try {
         const { page = 1, limit = 15, sortBy = 'name', descending = 'false', search } = req.query;
+        const tenant_id = req.user.tenant_id;
         
-        let query = supabase.from('routes').select('*', { count: 'exact' });
+        let query = supabaseAdmin.from('routes').select('*', { count: 'exact' }).eq('tenant_id', tenant_id);
 
         if (search) {
             query = query.ilike('name', `%${search}%`);
@@ -39,11 +41,12 @@ const getRoutes = async (req, res) => {
 const getRouteById = async (req, res) => {
     try {
         const { id } = req.params;
-        const { data: route, error: routeError } = await supabase.from('routes').select('*').eq('id', id).single();
+        const tenant_id = req.user.tenant_id;
+        const { data: route, error: routeError } = await supabaseAdmin.from('routes').select('*').eq('id', id).eq('tenant_id', tenant_id).single();
         if (routeError) throw routeError;
         if (!route) return res.status(404).json({ error: 'Ruta no encontrada' });
 
-        const { data: customers, error: customerError } = await supabase.from('customers').select('*').eq('route_id', id);
+        const { data: customers, error: customerError } = await supabaseAdmin.from('customers').select('*').eq('route_id', id).eq('tenant_id', tenant_id);
         if (customerError) throw customerError;
 
         res.json({ ...route, customers });
@@ -55,12 +58,13 @@ const getRouteById = async (req, res) => {
 const createRoute = async (req, res) => {
     try {
         const { name, description } = req.body;
+        const tenant_id = req.user.tenant_id;
         const routeData = {
             name,
             description,
-            tenant_id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef' // Sacar del middleware de auth
+            tenant_id
         };
-        const { data, error } = await supabase.from('routes').insert(routeData).select().single();
+        const { data, error } = await supabaseAdmin.from('routes').insert(routeData).select().single();
         if (error) throw error;
         res.status(201).json(data);
     } catch (error) {
@@ -72,11 +76,12 @@ const updateRoute = async (req, res) => {
     try {
         const { id } = req.params;
         const { name, description } = req.body;
+        const tenant_id = req.user.tenant_id;
         const routeData = { name, description };
 
         Object.keys(routeData).forEach(key => routeData[key] === undefined && delete routeData[key]);
 
-        const { data, error } = await supabase.from('routes').update(routeData).eq('id', id).select().single();
+        const { data, error } = await supabaseAdmin.from('routes').update(routeData).eq('id', id).eq('tenant_id', tenant_id).select().single();
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Ruta no encontrada' });
         res.json(data);
@@ -88,8 +93,9 @@ const updateRoute = async (req, res) => {
 const deleteRoute = async (req, res) => {
     try {
         const { id } = req.params;
+        const tenant_id = req.user.tenant_id;
         // Los clientes asociados tendrán su route_id puesto a NULL por la FK
-        const { error } = await supabase.from('routes').delete().eq('id', id);
+        const { error } = await supabaseAdmin.from('routes').delete().eq('id', id).eq('tenant_id', tenant_id);
         if (error) throw error;
         res.status(204).send();
     } catch (error) {
@@ -101,10 +107,10 @@ const updateRouteCustomers = async (req, res) => {
     try {
         const { id } = req.params; // id de la ruta
         const { customerIds } = req.body;
-        const tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
+        const tenant_id = req.user.tenant_id;
 
         // Usar una función RPC para hacer esto transaccional
-        const { data, error } = await supabase.rpc('update_route_customers', {
+        const { data, error } = await supabaseAdmin.rpc('update_route_customers', {
             p_route_id: id,
             p_customer_ids: customerIds,
             p_tenant_id: tenant_id

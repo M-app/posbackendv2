@@ -1,9 +1,11 @@
 const supabase = require('../config/supabaseClient');
+const supabaseAdmin = require('../config/supabaseAdmin');
 
 const getCategories = async (req, res) => {
     try {
         const { search } = req.query;
-        let query = supabase.from('categories').select('*');
+        const tenant_id = req.user.tenant_id;
+        let query = supabaseAdmin.from('categories').select('*').eq('tenant_id', tenant_id);
 
         // Aplicar el filtro solo si el término de búsqueda no está vacío
         if (search && search.trim() !== '') {
@@ -22,8 +24,8 @@ const getCategories = async (req, res) => {
 const createCategory = async (req, res) => {
     try {
         const { name } = req.body;
-        const tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // Sacar del middleware de auth
-        const { data, error } = await supabase.from('categories').insert({ name, tenant_id }).select().single();
+        const tenant_id = req.user.tenant_id;
+        const { data, error } = await supabaseAdmin.from('categories').insert({ name, tenant_id }).select().single();
         if (error) throw error;
         res.status(201).json(data);
     } catch (error) {
@@ -35,7 +37,8 @@ const updateCategory = async (req, res) => {
     try {
         const { id } = req.params;
         const { name } = req.body;
-        const { data, error } = await supabase.from('categories').update({ name }).eq('id', id).select().single();
+        const tenant_id = req.user.tenant_id;
+        const { data, error } = await supabaseAdmin.from('categories').update({ name }).eq('id', id).eq('tenant_id', tenant_id).select().single();
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Categoría no encontrada' });
         res.json(data);
@@ -47,7 +50,8 @@ const updateCategory = async (req, res) => {
 const deleteCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        const { error } = await supabase.from('categories').delete().eq('id', id);
+        const tenant_id = req.user.tenant_id;
+        const { error } = await supabaseAdmin.from('categories').delete().eq('id', id).eq('tenant_id', tenant_id);
         if (error) throw error;
         res.status(204).send();
     } catch (error) {

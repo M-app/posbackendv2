@@ -4,10 +4,11 @@ const VIRTUAL_EMAIL_DOMAIN = process.env.VIRTUAL_EMAIL_DOMAIN || 'user.local';
 
 const getUsers = async (req, res) => {
     try {
+        const userRole = req.user.role;
         const tenant_id = req.user.tenant_id;
 
-        // 1) Obtener perfiles + email desde auth.users
-        const { data: profiles, error: profilesError } = await supabaseAdmin
+        // 1) Obtener perfiles - todos si es super_admin, solo del tenant si es admin
+        let profilesQuery = supabaseAdmin
             .from('profiles')
             .select(`
                 id, 
@@ -15,21 +16,39 @@ const getUsers = async (req, res) => {
                 last_name, 
                 username, 
                 role, 
-                tenant_id,
-                auth_users!inner(email)
-            `)
-            .eq('tenant_id', tenant_id);
+                tenant_id
+            `);
+
+        if (userRole !== 'super_admin') {
+            profilesQuery = profilesQuery.eq('tenant_id', tenant_id);
+        }
+
+        const { data: profiles, error: profilesError } = await profilesQuery;
         if (profilesError) throw profilesError;
 
-        // 2) Mapear datos
-        const users = profiles.map(p => ({
-            id: p.id,
-            firstName: p.first_name,
-            lastName: p.last_name,
-            username: p.username || null,
-            role: p.role === 'admin' ? 'administrador' : 'vendedor',
-            email: p.auth_users?.email || 'N/A',
-            status: 'Activo'
+        // 2) Obtener información de tenants para super_admin
+        let tenantsMap = {};
+        if (userRole === 'super_admin') {
+            const { data: tenants } = await supabaseAdmin
+                .from('tenants')
+                .select('id, name');
+            tenantsMap = tenants?.reduce((acc, t) => ({ ...acc, [t.id]: t.name }), {}) || {};
+        }
+
+        // 3) Obtener emails de auth.users para cada perfil
+        const users = await Promise.all(profiles.map(async (p) => {
+            const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(p.id);
+            return {
+                id: p.id,
+                firstName: p.first_name,
+                lastName: p.last_name,
+                username: p.username || null,
+                role: p.role === 'admin' ? 'administrador' : 'vendedor',
+                email: authUser?.user?.email || 'N/A',
+                tenant_id: p.tenant_id,
+                tenant_name: userRole === 'super_admin' ? (tenantsMap[p.tenant_id] || 'N/A') : null,
+                status: 'Activo'
+            };
         }));
 
         res.json(users);

@@ -1,4 +1,5 @@
 const supabase = require('../config/supabaseClient');
+const supabaseAdmin = require('../config/supabaseAdmin');
 
 const createInventoryRecord = async (req, res) => {
     const payload = req.body;
@@ -13,7 +14,7 @@ const createInventoryRecord = async (req, res) => {
         }));
     }
 
-    const { data, error } = await supabase.rpc('create_inventory_record_transactional', {
+    const { data, error } = await supabaseAdmin.rpc('create_inventory_record_transactional', {
         p_payload: payload
     });
 
@@ -40,7 +41,7 @@ const updateInventoryRecord = async (req, res) => {
         }));
     }
 
-    const { data, error } = await supabase.rpc('update_inventory_record_transactional', {
+    const { data, error } = await supabaseAdmin.rpc('update_inventory_record_transactional', {
         p_record_id: id,
         p_payload: payload
     });
@@ -57,7 +58,7 @@ const updateInventoryRecord = async (req, res) => {
 const deleteInventoryRecord = async (req, res) => {
     const { id } = req.params;
 
-    const { data, error } = await supabase.rpc('delete_inventory_record_transactional', {
+    const { data, error } = await supabaseAdmin.rpc('delete_inventory_record_transactional', {
         p_record_id: id
     });
 
@@ -75,9 +76,10 @@ const getInventoryRecords = async (req, res) => {
     const pageNum = parseInt(page, 10) || 1;
     const lim = parseInt(limit, 10) || 10;
     const offset = (pageNum - 1) * lim;
+    const tenant_id = req.user.tenant_id;
 
     try {
-        let query = supabase
+        let query = supabaseAdmin
             .from('inventory_records')
             .select(`
                 *,
@@ -89,7 +91,8 @@ const getInventoryRecords = async (req, res) => {
                         product:products(name)
                     )
                 )
-            `, { count: 'exact' });
+            `, { count: 'exact' })
+            .eq('tenant_id', tenant_id);
         
         if (type) query = query.eq('type', type);
 
@@ -108,10 +111,12 @@ const getInventoryRecords = async (req, res) => {
 const getInventoryRecordById = async (req, res) => {
     try {
         const { id } = req.params;
-        const { data, error } = await supabase
+        const tenant_id = req.user.tenant_id;
+        const { data, error } = await supabaseAdmin
             .from('inventory_records')
             .select(`*, items:inventory_record_items(*, variant:product_variants(id, code, title, cost, product:products(id, name)))`)
             .eq('id', id)
+            .eq('tenant_id', tenant_id)
             .single();
 
         if (error) throw error;
@@ -170,7 +175,8 @@ const getProductMovements = async (req, res) => {
         const descending = String(descendingRaw).toLowerCase() === 'true';
 
         // Seleccionar items de inventario y embeber datos del registro y variante
-        let query = supabase
+        const tenant_id = req.user.tenant_id;
+        let query = supabaseAdmin
             .from('inventory_record_items')
             .select(`
                 id,
@@ -178,7 +184,8 @@ const getProductMovements = async (req, res) => {
                 variant:product_variants!inner(title, product_id),
                 record:inventory_records!inner(id, date, type, description)
             `, { count: 'exact' })
-            .eq('product_variants.product_id', productId);
+            .eq('product_variants.product_id', productId)
+            .eq('inventory_records.tenant_id', tenant_id);
 
         // Filtros por fecha sobre el registro padre (fin de rango inclusivo)
         const isoStart = toIsoStartOfDay(startDate);

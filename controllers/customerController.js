@@ -1,30 +1,40 @@
 const supabase = require('../config/supabaseClient');
+const supabaseAdmin = require('../config/supabaseAdmin');
 
 const getCustomers = async (req, res) => {
     try {
         const { page = 1, limit = 10, search = '', routeId = null } = req.query;
+        const tenant_id = req.user.tenant_id;
+        const pageNum = parseInt(page, 10) || 1;
+        const lim = parseInt(limit, 10) || 10;
+        const offset = (pageNum - 1) * lim;
 
-        const { data, error } = await supabase.rpc('search_customers_paginated', {
-            p_search_term: search,
-            p_route_id: routeId,
-            p_page_num: parseInt(page),
-            p_page_size: parseInt(limit)
-        });
+        let query = supabaseAdmin
+            .from('customers')
+            .select('*', { count: 'exact' })
+            .eq('tenant_id', tenant_id);
+
+        if (search && search.trim() !== '') {
+            query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
+        }
+
+        if (routeId) {
+            query = query.eq('route_id', routeId);
+        }
+
+        const { data, error, count } = await query
+            .order('first_name', { ascending: true })
+            .range(offset, offset + lim - 1);
 
         if (error) throw error;
 
-        const total_count = data.length > 0 ? data[0].total_count : 0;
-
-        // Quitamos la columna 'total_count' de cada objeto antes de enviarla
-        const items = data.map(({ total_count, ...rest }) => rest);
-
         res.json({
-            items,
+            items: data || [],
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total: total_count,
-                pages: Math.ceil(total_count / limit)
+                page: pageNum,
+                limit: lim,
+                total: count || 0,
+                pages: Math.ceil((count || 0) / lim)
             }
         });
     } catch (error) {
@@ -35,7 +45,8 @@ const getCustomers = async (req, res) => {
 const getCustomerById = async (req, res) => {
     try {
         const { id } = req.params;
-        const { data, error } = await supabase.from('customers').select('*').eq('id', id).single();
+        const tenant_id = req.user.tenant_id;
+        const { data, error } = await supabaseAdmin.from('customers').select('*').eq('id', id).eq('tenant_id', tenant_id).single();
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Cliente no encontrado' });
         res.json(data);
@@ -47,6 +58,7 @@ const getCustomerById = async (req, res) => {
 const createCustomer = async (req, res) => {
     try {
         const { firstName, lastName, email, phone, address, city, state, zipCode, routeId } = req.body;
+        const tenant_id = req.user.tenant_id;
         
         const customerData = {
             first_name: firstName,
@@ -58,10 +70,10 @@ const createCustomer = async (req, res) => {
             state,
             zip_code: zipCode,
             route_id: routeId,
-            tenant_id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef' // Sacar del middleware de auth
+            tenant_id
         };
 
-        const { data, error } = await supabase.from('customers').insert(customerData).select().single();
+        const { data, error } = await supabaseAdmin.from('customers').insert(customerData).select().single();
         if (error) throw error;
         res.status(201).json(data);
     } catch (error) {
@@ -89,7 +101,7 @@ const updateCustomer = async (req, res) => {
         // Eliminar campos undefined para no sobreescribir con null
         Object.keys(customerData).forEach(key => customerData[key] === undefined && delete customerData[key]);
 
-        const { data, error } = await supabase.from('customers').update(customerData).eq('id', id).select().single();
+        const { data, error } = await supabaseAdmin.from('customers').update(customerData).eq('id', id).eq('tenant_id', req.user.tenant_id).select().single();
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Cliente no encontrado' });
         res.json(data);
@@ -101,7 +113,7 @@ const updateCustomer = async (req, res) => {
 const deleteCustomer = async (req, res) => {
     try {
         const { id } = req.params;
-        const { error } = await supabase.from('customers').delete().eq('id', id);
+        const { error } = await supabaseAdmin.from('customers').delete().eq('id', id).eq('tenant_id', req.user.tenant_id);
         if (error) throw error;
         res.status(204).send();
     } catch (error) {

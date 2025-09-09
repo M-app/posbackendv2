@@ -1,10 +1,10 @@
 const supabase = require('../config/supabaseClient');
+const supabaseAdmin = require('../config/supabaseAdmin');
 
 const getBusinessConfig = async (req, res) => {
     try {
-        // El tenant_id debería venir del middleware de autenticación
-        const tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; 
-        const { data, error } = await supabase
+        const tenant_id = req.user.tenant_id;
+        const { data, error } = await supabaseAdmin
             .from('business_config')
             .select('*')
             .eq('tenant_id', tenant_id)
@@ -26,11 +26,11 @@ const getBusinessConfig = async (req, res) => {
 const updateBusinessConfig = async (req, res) => {
     try {
         const configData = req.body;
-        const tenant_id = 'a1b2c3d4-e5f6-7890-1234-567890abcdef'; // Sacar del middleware de auth
+        const tenant_id = req.user.tenant_id;
         configData.tenant_id = tenant_id;
 
         // "Upsert" para crear la configuración si no existe, o actualizarla si ya existe.
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('business_config')
             .upsert(configData, { onConflict: 'tenant_id' })
             .select()
