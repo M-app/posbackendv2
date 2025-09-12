@@ -187,16 +187,34 @@ const inviteUser = async (req, res) => {
 const deleteUser = async (req, res) => {
     try {
         const { id } = req.params;
-        
-        // Usamos el cliente de admin para eliminar un usuario.
-        // El perfil se eliminará automáticamente gracias al ON DELETE CASCADE.
-        const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
-        
-        if (error) throw error;
-        
-        res.status(204).send();
+
+        // 1) Desacoplar referencias que podrían bloquear el borrado (FK RESTRICT)
+        //    Ej: orders.created_by -> profiles.id
+        try {
+            await supabaseAdmin
+                .from('orders')
+                .update({ created_by: null })
+                .eq('created_by', id);
+        } catch (_) { /* noop: si falla, lo reportará el delete posterior */ }
+
+        // 2) Eliminar perfil explícitamente (por si no hay ON DELETE CASCADE desde auth.users)
+        try {
+            await supabaseAdmin
+                .from('profiles')
+                .delete()
+                .eq('id', id);
+        } catch (_) { /* noop */ }
+
+        // 3) Eliminar usuario en Auth
+        const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(id);
+        if (delErr) {
+            // Supabase a veces devuelve un mensaje genérico: hacerlo más claro
+            throw new Error(delErr.message || 'Database error deleting user');
+        }
+
+        return res.status(204).send();
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: error.message || 'Database error deleting user' });
     }
 };
 

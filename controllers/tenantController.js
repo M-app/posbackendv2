@@ -178,8 +178,29 @@ const getTenantUsers = async (req, res) => {
 
     if (error) throw error;
 
+    // Enriquecer con email desde Auth (admin)
+    const userIds = (data || []).map(u => u.id);
+    const emailMap = new Map();
+    await Promise.all(
+      userIds.map(async (uid) => {
+        try {
+          const { data: userData, error: userErr } = await supabaseAdmin.auth.admin.getUserById(uid);
+          if (!userErr && userData?.user?.email) {
+            emailMap.set(uid, userData.user.email);
+          }
+        } catch (_) {
+          // ignorar errores individuales
+        }
+      })
+    );
+
+    const enriched = (data || []).map(u => ({
+      ...u,
+      email: emailMap.get(u.id) || null
+    }));
+
     res.json({
-      items: data,
+      items: enriched,
       pagination: {
         page: pageNum,
         limit: lim,
