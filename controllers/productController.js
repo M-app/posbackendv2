@@ -169,7 +169,15 @@ const createProduct = async (req, res) => {
         if (variants && variants.length > 0) {
             for (const variant of variants) {
                 // a. Preparar datos para product_variants
-                const { detalle, semi, mayoreo, ...variantDetails } = variant;
+                const {
+                    detalle,
+                    semi,
+                    mayoreo,
+                    detalle_minQuantity,
+                    semi_minQuantity,
+                    mayoreo_minQuantity,
+                    ...variantDetails
+                } = variant;
                 const variantData = {
                     ...variantDetails,
                     product_id: newProduct.id,
@@ -187,9 +195,9 @@ const createProduct = async (req, res) => {
 
                 // c. Preparar los datos de precios para variant_prices
                 const pricesData = [
-                    { name: 'detalle', value: detalle, min_quantity: 1, variant_id: newVariant.id, tenant_id: newProduct.tenant_id },
-                    { name: 'semi', value: semi, min_quantity: 10, variant_id: newVariant.id, tenant_id: newProduct.tenant_id },
-                    { name: 'mayoreo', value: mayoreo, min_quantity: 20, variant_id: newVariant.id, tenant_id: newProduct.tenant_id }
+                    { name: 'detalle', value: detalle, min_quantity: detalle_minQuantity ?? 1, variant_id: newVariant.id, tenant_id: newProduct.tenant_id },
+                    { name: 'semi', value: semi, min_quantity: semi_minQuantity ?? 0, variant_id: newVariant.id, tenant_id: newProduct.tenant_id },
+                    { name: 'mayoreo', value: mayoreo, min_quantity: mayoreo_minQuantity ?? 0, variant_id: newVariant.id, tenant_id: newProduct.tenant_id }
                 ];
 
                 // d. Insertar los precios
@@ -234,7 +242,16 @@ const updateProduct = async (req, res) => {
         // 3. Sincronizar variantes y precios
         if (variants && variants.length > 0) {
             for (const variant of variants) {
-                const { id: variantId, detalle, semi, mayoreo, ...variantData } = variant;
+                const {
+                    id: variantId,
+                    detalle,
+                    semi,
+                    mayoreo,
+                    detalle_minQuantity,
+                    semi_minQuantity,
+                    mayoreo_minQuantity,
+                    ...variantData
+                } = variant;
 
                 // a. Preparar datos para la tabla 'product_variants'
                 const variantToUpsert = {
@@ -250,9 +267,9 @@ const updateProduct = async (req, res) => {
 
                 // c. Preparar datos de precios
                 const pricesToUpsert = [
-                    { name: 'detalle', value: detalle, min_quantity: 1, variant_id: variantId, tenant_id: tenant_id },
-                    { name: 'semi', value: semi, min_quantity: 10, variant_id: variantId, tenant_id: tenant_id },
-                    { name: 'mayoreo', value: mayoreo, min_quantity: 20, variant_id: variantId, tenant_id: tenant_id }
+                    { name: 'detalle', value: detalle, min_quantity: detalle_minQuantity ?? 1, variant_id: variantId, tenant_id: tenant_id },
+                    { name: 'semi', value: semi, min_quantity: semi_minQuantity ?? 0, variant_id: variantId, tenant_id: tenant_id },
+                    { name: 'mayoreo', value: mayoreo, min_quantity: mayoreo_minQuantity ?? 0, variant_id: variantId, tenant_id: tenant_id }
                 ];
 
                 // d. Hacer Upsert en 'variant_prices'
